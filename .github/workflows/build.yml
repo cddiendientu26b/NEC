@@ -1,0 +1,120 @@
+name: Build NEC Remote APK (2-File Mode)
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Auto-generate Android Project Structure
+        run: |
+          mkdir -p app/src/main/java/com/nec/remote
+
+          # Tự động tìm MainActivity.kt (kể cả viết thường mainactivity.kt) và đưa vào đúng chỗ
+          FOUND_KT=$(find . -maxdepth 4 -iname "mainactivity.kt" | head -n 1)
+          if [ -z "$FOUND_KT" ]; then
+            echo "Lỗi: Không tìm thấy file MainActivity.kt trong repo!"
+            exit 1
+          fi
+          TARGET_KT="app/src/main/java/com/nec/remote/MainActivity.kt"
+          if [ "$(realpath "$FOUND_KT")" != "$(realpath "$TARGET_KT")" ]; then
+            cp "$FOUND_KT" "$TARGET_KT"
+          fi
+
+          cat << 'EOF' > settings.gradle
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "NECRemote"
+          include ':app'
+          EOF
+
+          cat << 'EOF' > app/build.gradle
+          plugins {
+              id 'com.android.application' version '8.4.0'
+              id 'org.jetbrains.kotlin.android' version '1.9.23'
+          }
+
+          android {
+              namespace 'com.nec.remote'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.nec.remote"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.TRANSMIT_IR" />
+              <uses-feature android:name="android.hardware.consumerir" android:required="false" />
+              <application
+                  android:label="NEC Projector Remote"
+                  android:icon="@android:drawable/ic_lock_power_off"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:screenOrientation="portrait">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build Debug APK
+        run: gradle assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NEC-Projector-Remote-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          
